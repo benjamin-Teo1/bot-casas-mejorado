@@ -7,7 +7,10 @@ import { chooseMove } from "../src/strategy.js";
 
 // El fixture es un estado conocido para repetir las pruebas con los mismos datos.
 // La URL relativa a este archivo permite encontrarlo sin depender del directorio actual.
-const fixture = JSON.parse(readFileSync(new URL("../fixtures/state1.json", import.meta.url), "utf8"));
+const parsed: unknown = JSON.parse(readFileSync(new URL("../fixtures/state1.json", import.meta.url), "utf8"));
+// Validamos el fixture una sola vez: así TypeScript conoce su tipo en todos los tests.
+assert.ok(isState(parsed));
+const fixture = parsed;
 
 test("elige piezas propias, ignora casas neutrales y no modifica el estado", () => {
   // Validamos el fixture antes de pasarlo a la estrategia.
@@ -15,7 +18,7 @@ test("elige piezas propias, ignora casas neutrales y no modifica el estado", () 
   // Una copia profunda permite detectar si la estrategia modifica el tablero original.
   const original = structuredClone(fixture);
   expect(chooseMove(fixture)).toEqual({ A1: "N" });
-  expect(chooseMove({ ...fixture, jugador: "B" })).toEqual({ B2: "N" });
+  expect(chooseMove({ ...fixture, jugador: "B" })).toEqual({ B2: "S" });
   expect(fixture).toEqual(original);
   // Sin piezas, la respuesta debe ser un diccionario vacío.
   const empty = structuredClone(fixture);
@@ -33,8 +36,8 @@ test.each(["A", "B"] as const)("mueve todas las fichas de %s sin modificar el es
   state.tablero[9][9] = "B4";
   const original = structuredClone(state);
   expect(chooseMove(state)).toEqual(jugador === "A"
-    ? { A1: "N", A2: "N", A3: "N" }
-    : { B2: "N", B3: "N", B4: "N" });
+    ? { A1: "N", A2: "O", A3: "O" }
+    : { B2: "S", B3: "S", B4: "S" });
   expect(state).toEqual(original);
 });
 
@@ -45,6 +48,22 @@ test.each(["A", "B"] as const)("devuelve un objeto vacío si %s no tiene fichas"
   state.tablero[0][0] = "N";
   state.tablero[1][1] = jugador === "A" ? "B1" : "A1";
   expect(chooseMove(state)).toEqual({});
+});
+
+test("dos fichas propias no eligen la misma casilla en un turno", () => {
+  // Tablero vacío con una sola casa en (5,5) y dado 3.
+  const state = structuredClone(fixture);
+  state.jugador = "A";
+  state.dado = 3;
+  state.tablero.forEach(row => row.fill(""));
+  state.tablero[5][5] = "N";
+  // Las dos fichas están a 3 casillas de la casa, una de cada lado.
+  state.tablero[5][2] = "A1"; // con "E" llega a (5,5)
+  state.tablero[5][8] = "A2"; // con "O" también llegaría a (5,5)
+  // A1 se evalúa primero y toma (5,5). A2 ya no puede elegir esa casilla:
+  // su mejor opción libre es "E", que con el wrap la deja en (5,1), a distancia 4.
+  // Sin la mejora, A2 respondería "O" y ambas chocarían en la casa.
+  expect(chooseMove(state)).toEqual({ A1: "E", A2: "E" });
 });
 
 test("POST /move valida el estado y devuelve un diccionario", async () => {
@@ -63,7 +82,7 @@ test("POST /move valida el estado y devuelve un diccionario", async () => {
     for (const jugador of ["A", "B"]) {
       const response = await post(JSON.stringify({ ...fixture, jugador }));
       expect(response.status).toBe(200);
-      expect(await response.json()).toEqual(jugador === "A" ? { A1: "N" } : { B2: "N" });
+      expect(await response.json()).toEqual(jugador === "A" ? { A1: "N" } : { B2: "S" });
     }
     // El endpoint también debe devolver todas las fichas de cada jugador.
     const multiple = structuredClone(fixture);
@@ -74,8 +93,8 @@ test("POST /move valida el estado y devuelve un diccionario", async () => {
       const response = await post(JSON.stringify({ ...multiple, jugador }));
       expect(response.status).toBe(200);
       expect(await response.json()).toEqual(jugador === "A"
-        ? { A1: "N", A2: "N", A3: "N" }
-        : { B2: "N", B3: "N" });
+        ? { A1: "N", A2: "O", A3: "O" }
+        : { B2: "S", B3: "S" });
     }
     // Los tres resultados posibles del dado deben ser aceptados.
     for (const dado of [1, 2, 3]) {
@@ -83,7 +102,8 @@ test("POST /move valida el estado y devuelve un diccionario", async () => {
     }
     // Alteramos copias para probar casillas inválidas y filas incompletas.
     const badCell = structuredClone(fixture);
-    badCell.tablero[0][0] = null;
+    // El tipo del tablero no admite null, así que lo tratamos como unknown[] solo para esta prueba.
+    (badCell.tablero[0] as unknown[])[0] = null;
     const shortRow = structuredClone(fixture);
     shortRow.tablero[0].pop();
     // Cada estado inválido debe devolver 400, sin llegar a elegir un movimiento.
