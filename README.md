@@ -148,7 +148,7 @@ y **volvé a ejecutar las tres líneas del paso 3** para leer su nuevo contenido
 | Cambio en el archivo | Resultado esperado |
 | --- | --- |
 | Cambiar `"jugador": "A"` por `"jugador": "B"` | Devuelve `{"B2":"N"}`, usando la pieza B2 del ejemplo. |
-| Cambiar el dado a `1` o `2` | La solicitud sigue siendo válida; la estrategia todavía no usa el dado para elegir. |
+| Cambiar el dado a `1` o `2` | La solicitud sigue siendo válida. El dado define cuántas casillas se mueve la ficha; en este ejemplo la respuesta sigue siendo `{"A1":"N"}`. |
 | Cambiar el dado a `4` | Devuelve HTTP 400 porque el dado solo admite 1, 2 o 3. |
 | Quitar una casilla de una fila | Devuelve HTTP 400 porque el tablero debe medir 10×10. |
 
@@ -168,8 +168,9 @@ npm test
 No hace falta iniciar el bot para esto: las pruebas levantan su propio servidor
 temporal y lo cierran al terminar. Comprueban las respuestas para A y B, los valores
 del dado y el rechazo de estados inválidos. Si todo está bien, el resumen indica
-`Tests: 6 passed, 6 total`. También verifican que se muevan todas las fichas
-propias, se ignoren las ajenas y neutrales, y no se modifique el estado.
+`Tests: 7 passed, 7 total`. También verifican que se muevan todas las fichas
+propias, se ignoren las ajenas y neutrales, no se modifique el estado y dos
+fichas propias no elijan la misma casilla en un turno.
 
 ## Problemas frecuentes
 
@@ -206,9 +207,10 @@ Las casillas contienen `""` (vacía), `"N"` (casa neutral) o un ID de pieza
 como `"A1"`, `"A2"` o `"B2"`, con un entero positivo. El tablero usa tuplas
 de longitud 10. El endpoint valida el JSON recibido y devuelve 400 si es inválido.
 
-La estrategia recorre todo el tablero y devuelve norte para cada pieza propia,
-por ejemplo `{"A1":"N","A2":"N"}`. Si no hay piezas propias, devuelve `{}`. No modifica el estado.
-Por ahora no usa el dado para decidir ni verifica si el movimiento es legal.
+La estrategia mueve cada pieza propia hacia la casa neutral más cercana, usando
+el dado y la distancia toroidal, y evita jugadas inválidas. Si no hay piezas
+propias, devuelve `{}`. No modifica el estado. Está explicada en detalle en la
+sección «Estrategia del bot» de más abajo.
 
 La estrategia está en `src/strategy.ts`, el handler en `src/move.ts`,
 la validación en `src/state.ts`, la configuración HTTP en `src/app.ts`
@@ -216,3 +218,45 @@ y el arranque en `src/server.ts`.
 
 El diccionario de direcciones sigue el formato solicitado para este bot; difiere
 del objeto `{pieceId, direction}` mostrado en el PDF de la clase.
+
+
+## Estrategia del bot (TP04 – Bot v0.1)
+
+La estrategia está en `src/strategy.ts`. Es una estrategia **voraz** (greedy): en cada turno, cada ficha propia busca la casa neutral más cercana y elige el movimiento que la deja más cerca de ella. Además incluye protecciones para que el bot **nunca envíe una jugada inválida**, porque tres fallos consecutivos son derrota técnica.
+
+### Cómo decide cada ficha
+
+1. Se buscan todas las casas neutrales (`"N"`) del tablero.
+2. Se recorre el tablero fila por fila y, para cada ficha propia, se elige la casa más cercana.
+3. Se prueban las 4 direcciones (N, S, O, E) moviendo **exactamente `dado` casillas**. El tablero es toroidal, así que el destino se calcula con `(pos + delta * dado + 10) % 10`. El `+ 10` evita índices negativos al cruzar el borde.
+4. Se descartan los destinos inválidos y se elige el que minimiza la distancia a la casa objetivo. Los empates se resuelven por el orden de `DIRECCIONES` (N, S, O, E).
+
+### Distancia toroidal
+
+Como los bordes están conectados, la distancia en cada eje es `min(|a - b|, 10 - |a - b|)`. La distancia total es la suma de ambos ejes (Manhattan toroidal).
+
+### Mejoras para no fallar
+
+| Mejora | Problema que resuelve |
+| --- | --- |
+| **Dos niveles de búsqueda** (`permitirPropias`) | Una ficha con las 4 direcciones bloqueadas no tenía jugada. Primero se buscan destinos libres o casas; si no hay ninguno, se permite caer sobre una ficha propia (el árbitro lo acepta si esa ficha se mueve). |
+| **Reserva de destinos** (`destinosUsados`) | El árbitro rechaza los destinos compartidos. Cada destino elegido se registra y las fichas siguientes no pueden usarlo. Tiene prioridad la ficha que aparece primero al recorrer el tablero. |
+| **Jugada de emergencia** (`?? DIRECCIONES[0].dir`) | Si ninguna dirección sirve, se devuelve `"N"` igualmente para que la respuesta incluya **todas** las fichas propias, como exige el árbitro. Esa jugada puede ser inválida, pero el formato siempre es correcto. |
+
+El destino de emergencia no se registra en `destinosUsados`, para no bloquear una casilla que otra ficha propia podría usar bien.
+
+### Pruebas
+
+`npm test` ejecuta 7 pruebas. La séptima verifica que dos fichas propias no elijan la misma casilla: con una casa en (5,5), dado 3, A1 en (5,2) y A2 en (5,8), el resultado esperado es `{"A1":"E","A2":"E"}`. A1 se queda con la casa y A2 elige su mejor alternativa libre.
+
+### Limitaciones conocidas
+
+- Todas las fichas van a la casa más cercana a ellas; no se reparten las casas entre fichas.
+- No mira a los rivales: solo evita caer sobre ellos. No intenta ganarles una casa ni bloquearlos.
+- La prioridad entre fichas propias depende del orden de recorrido del tablero.
+- La jugada de emergencia puede ser inválida.
+- Decide solo con el estado actual, sin memoria de turnos anteriores.
+
+### Mejoras futuras
+
+Asignar una casa distinta a cada ficha y considerar la posición de los rivales para disputar casas cercanas.
