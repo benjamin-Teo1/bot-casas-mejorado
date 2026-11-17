@@ -1,4 +1,4 @@
-import { app } from "../src/app.js";
+import { app } from "../src/app.ts";
 
 // Vercel invoca esta aplicación ante cada solicitud HTTP.
 // No usamos app.listen: Vercel administra el servidor y el puerto.
