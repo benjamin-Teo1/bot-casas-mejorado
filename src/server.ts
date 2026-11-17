@@ -1,4 +1,4 @@
-import { app } from "./app.js";
+import { app } from "./app.ts";
 
 // PORT permite configurar el despliegue; en desarrollo usamos 3000 por defecto.
 const port = process.env.PORT || 3000;
