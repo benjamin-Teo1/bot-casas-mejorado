@@ -1,4 +1,4 @@
-import type { Movement, State, Direction, PieceId } from "./types.js";
+import type { Movement, State, Direction, PieceId } from "./types.ts";
 
 const TAMAÑO = 10;
 const DIRECCIONES: { dir: Direction; df: number; dc: number }[] = [
