@@ -1,4 +1,4 @@
-import type { State } from "./types.js";
+import type { State } from "./types.ts";
 
 // El JSON externo empieza como unknown: no podemos confiar en su estructura.
 // Si devuelve true, «value is State» permite a TypeScript tratarlo como State.
