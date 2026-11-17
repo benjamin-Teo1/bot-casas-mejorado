@@ -1,7 +1,7 @@
-import { chooseMove } from "./strategy.js";
-import { isState } from "./state.js";
+import { chooseMove } from "./strategy.ts";
+import { isState } from "./state.ts";
 import type { Request, Response } from "express";
-import type { Movement } from "./types.js";
+import type { Movement } from "./types.ts";
 
 // Este handler conecta HTTP con la estrategia del juego.
 // Request tipa, en orden, los parámetros de ruta, la respuesta y el body.
